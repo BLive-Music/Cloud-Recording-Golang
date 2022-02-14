@@ -12,7 +12,12 @@ import (
 )
 
 func healthCheck(c *fiber.Ctx) error {
+	fmt.Println("Health Check")
 	return c.SendString("OK")
+}
+
+func ping(c *fiber.Ctx) error {
+	return c.SendString("pong")
 }
 
 func main() {
@@ -29,6 +34,7 @@ func main() {
 	app := fiber.New()
 	app.Use(cors.New())
 	app.Get("/", healthCheck)
+	app.Get("/ping", ping)
 	api.MountRoutes(app)
 
 	app.Listen(":" + viper.GetString("PORT"))

@@ -17,24 +17,24 @@
       "required": true
     },
     "BUCKET_NAME": {
-      "description": "Name of your AWS S3 Bucket. Required for Cloud Recording.",
+      "description": "Name of your storage bucket. Required for Cloud Recording.",
       "required": true
     },
     "RECORDING_REGION": {
-      "description": "Region of your AWS S3 Bucket. Required for Cloud Recording.",
+      "description": "Region of your storage bucket. Required for Cloud Recording.",
       "required": true
     },
     "RECORDING_VENDOR": {
-      "description": "Cloud Recording Vendor ID. ",
+      "description": "Cloud Recording Vendor ID. See more: https://docs.agora.io/en/cloud-recording/cloud_recording_api_start?platform=RESTful#cloud-storage-configuration",
       "default": 1,
       "required": true
     },
     "BUCKET_ACCESS_KEY": {
-      "description": "Enter your AWS Access key. Required for Cloud Recording.",
+      "description": "Enter your bucket access key. Required for Cloud Recording.",
       "required": true
     },
     "BUCKET_ACCESS_SECRET": {
-      "description": "Enter your AWS Access secret. Required for Cloud Recording.",
+      "description": "Enter your bucket access secret. Required for Cloud Recording.",
       "required": true
     }
   }

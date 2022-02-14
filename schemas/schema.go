@@ -1,11 +1,12 @@
 package schemas
 
-type StartCall struct {
+type CallInfo struct {
 	// Uid     int    `json:"uid"`
-	Channel string `json:"channel"`
+	Channel   string     `json:"channel"`
+	Streamers []Streamer `json:"streamers"`
 }
 
-type StopCall struct {
+type StopRecording struct {
 	Uid     int    `json:"uid"`
 	Channel string `json:"channel"`
 	Rid     string `json:"rid"`
@@ -17,7 +18,20 @@ type UserCredentials struct {
 	UID int    `json:"uid"`
 }
 
-type CallStatus struct {
+type QueryRecording struct {
 	Rid string `json:"rid"`
 	Sid string `json:"sid"`
+}
+
+type UpdateRecording struct {
+	Uid       int        `json:"uid"`
+	Channel   string     `json:"channel"`
+	Rid       string     `json:"rid"`
+	Sid       string     `json:"sid"`
+	Streamers []Streamer `json:"streamers"`
+}
+
+type Streamer struct {
+	Uid      string `json:"uid"`
+	ImageURL string `json:"image_url"`
 }

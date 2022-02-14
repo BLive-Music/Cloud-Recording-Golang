@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"math/rand"
 	"time"
 
 	"github.com/AgoraIO-Community/Cloud-Recording-Golang/schemas"
@@ -13,7 +12,7 @@ func GetRtcToken(channel string, uid int) (string, error) {
 	var RtcRole Role = RolePublisher
 
 	currentTimestamp := uint32(time.Now().UTC().Unix())
-	expireTimestamp := currentTimestamp + 86400
+	expireTimestamp := currentTimestamp + 7200
 
 	return BuildRTCTokenWithUID(viper.GetString("APP_ID"), viper.GetString("APP_CERTIFICATE"), channel, uint32(uid), RtcRole, expireTimestamp)
 }
@@ -29,7 +28,7 @@ func GetRtmToken(user string) (string, error) {
 
 // GenerateUserCredentials generates uid, rtc and rtc token
 func GenerateUserCredentials(channel string) (*schemas.UserCredentials, error) {
-	uid := int(rand.Uint32())
+	uid := 1
 	rtcToken, err := GetRtcToken(channel, uid)
 	if err != nil {
 		return nil, err

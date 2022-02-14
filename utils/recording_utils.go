@@ -2,17 +2,14 @@ package utils
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/AgoraIO-Community/Cloud-Recording-Golang/schemas"
+
 	"github.com/spf13/viper"
 )
 
@@ -40,11 +37,11 @@ var Regions = map[int]string{
 // Recorder manages cloud recording
 type Recorder struct {
 	http.Client
-	Channel string
-	Token   string
-	UID     int
-	RID     string
-	SID     string
+	CallInfo schemas.CallInfo
+	Token    string
+	UID      int
+	RID      string
+	SID      string
 }
 
 type StatusStruct struct {
@@ -67,7 +64,7 @@ type StatusStruct struct {
 
 // Acquire runs the acquire endpoint for Cloud Recording
 func (rec *Recorder) Acquire() (string, error) {
-	creds, err := GenerateUserCredentials(rec.Channel)
+	creds, err := GenerateUserCredentials(rec.CallInfo.Channel)
 	if err != nil {
 		return "", err
 	}
@@ -75,17 +72,32 @@ func (rec *Recorder) Acquire() (string, error) {
 	rec.UID = creds.UID
 	rec.Token = creds.Rtc
 
-	requestBody := fmt.Sprintf(`
-		{
-			"cname": "%s",
-			"uid": "%d",
-			"clientRequest": {
-				"resourceExpiredHour": 24
-			}
-		}
-	`, rec.Channel, rec.UID)
+	requestBodyMap := map[string]interface{}{
+		"cname": rec.CallInfo.Channel,
+		"uid":   strconv.Itoa(rec.UID),
+		"clientRequest": map[string]interface{}{
+			"resourceExpiredHour": 24,
+		},
+	}
+
+	requestBody, err := json.Marshal(requestBodyMap)
+
+	if err != nil {
+		return "", err
+	}
+
+	// requestBody := fmt.Sprintf(`
+	// 	{
+	// 		"cname": "%s",
+	// 		"uid": "%d",
+	// 		"clientRequest": {
+	// 			"resourceExpiredHour": 24
+	// 		}
+	// 	}
+	// `, rec.CallInfo.Channel, rec.UID)
+
 	req, err := http.NewRequest("POST", "https://api.agora.io/v1/apps/"+viper.GetString("APP_ID")+"/cloud_recording/acquire",
-		bytes.NewBuffer([]byte(requestBody)))
+		bytes.NewBuffer(requestBody))
 	if err != nil {
 		return "", err
 	}
@@ -106,50 +118,109 @@ func (rec *Recorder) Acquire() (string, error) {
 	rec.RID = result["resourceId"]
 	b, _ := json.Marshal(result)
 
+	fmt.Println("-----Acquire-----")
+	fmt.Printf("Response Body: %s\n\n", b)
+
 	return string(b), nil
 }
 
 // Start starts the recording
 func (rec *Recorder) Start() (string, error) {
-	currentTime := strconv.FormatInt(time.Now().Unix(), 10)
+	now := time.Now()
 
-	var requestBody string
+	var uidList []string
+	for _, streamer := range rec.CallInfo.Streamers {
+		uidList = append(uidList, streamer.Uid)
+	}
 
-	requestBody = fmt.Sprintf(`
-		{
-			"cname": "%s",
-			"uid": "%d",
-			"clientRequest": {
-				"token": "%s",
-				"recordingConfig": {
-					"maxIdleTime": 30,
-					"streamTypes": 2,
-					"channelType": 1,
-					"transcodingConfig": {
-						"height": 720,
-						"width": 1280,
-						"bitrate": 2260,
-						"fps": 15,
-						"mixedVideoLayout": 1,
-						"backgroundColor": "#000000"
-					}
+	requestBodyMap := map[string]interface{}{
+		"cname": rec.CallInfo.Channel,
+		"uid":   strconv.Itoa(rec.UID),
+		"clientRequest": map[string]interface{}{
+			"token": rec.Token,
+			"recordingConfig": map[string]interface{}{
+				"channelType":  0,
+				"audioProfile": 2,
+				"maxIdleTime":  30,
+				"streamTypes":  2,
+				"transcodingConfig": map[string]interface{}{
+					"width":            500,
+					"height":           1080,
+					"fps":              30,
+					"bitrate":          1710,
+					"mixedVideoLayout": 0,
+					"backgroundColor":  "#000000",
+					"backgroundConfig": rec.CallInfo.Streamers,
 				},
-				"storageConfig": {
-					"vendor": %d,
-					"region": %d,
-					"bucket": "%s",
-					"accessKey": "%s",
-					"secretKey": "%s",
-					"fileNamePrefix": ["%s", "%s"]
-				}
-			}
-		}
-	`, rec.Channel, rec.UID, rec.Token, viper.GetInt("RECORDING_VENDOR"), viper.GetInt("RECORDING_REGION"), viper.GetString("BUCKET_NAME"),
-		viper.GetString("BUCKET_ACCESS_KEY"), viper.GetString("BUCKET_ACCESS_SECRET"),
-		rec.Channel, currentTime)
+				"subscribeAudioUids": uidList,
+				"subscribeVideoUids": uidList,
+			},
+			"recordingFileConfig": map[string]interface{}{
+				"avFileType": []string{"hls", "mp4"},
+			},
+			"storageConfig": map[string]interface{}{
+				"vendor":    viper.GetInt("RECORDING_VENDOR"),
+				"region":    viper.GetInt("RECORDING_REGION"),
+				"bucket":    viper.GetString("BUCKET_NAME"),
+				"accessKey": viper.GetString("BUCKET_ACCESS_KEY"),
+				"secretKey": viper.GetString("BUCKET_ACCESS_SECRET"),
+				"fileNamePrefix": []string{
+					fmt.Sprintf("%d", now.Year()),
+					fmt.Sprintf("%02d", now.Month()),
+					fmt.Sprintf("%02d", now.Day()),
+					rec.CallInfo.Channel,
+				},
+			},
+		},
+	}
+	requestBody, err := json.Marshal(requestBodyMap)
+
+	if err != nil {
+		return "", err
+	}
+
+	// requestBody := fmt.Sprintf(`
+	// 	{
+	// 		"cname": "%s",
+	// 		"uid": "%d",
+	// 		"clientRequest": {
+	// 			"token": "%s",
+	// 			"recordingConfig": {
+	// 				"channelType": 0,
+	// 				"audioProfile": 2,
+	// 				"maxIdleTime": 30,
+	// 				"streamTypes": 2,
+	// 				"transcodingConfig": {
+	// 					"width": 500,
+	// 					"height": 1080,
+	// 					"fps": 30,
+	// 					"bitrate": 1710,
+	// 					"mixedVideoLayout": 0,
+	// 					"backgroundColor": "#000000",
+	// 					"backgroundConfig": "%s",
+	// 				},
+	// 				"subscribeAudioUids": "%s",
+	// 				"subscribeVideoUids": "%s",
+	// 			},
+	// 			"recordingFileConfig": {
+	// 				"avFileType": ["hls", "mp4"]
+	// 			},
+	// 			"storageConfig": {
+	// 				"vendor": %d,
+	// 				"region": %d,
+	// 				"bucket": "%s",
+	// 				"accessKey": "%s",
+	// 				"secretKey": "%s",
+	// 				"fileNamePrefix": ["%d", "%d", "%d", "%s"]
+	// 			}
+	// 		}
+	// 	}
+	// `, rec.CallInfo.Channel, rec.UID, rec.Token, backgroundConfig, uidListJson, uidListJson, viper.GetInt("RECORDING_VENDOR"), viper.GetInt("RECORDING_REGION"), viper.GetString("BUCKET_NAME"),
+	// 	viper.GetString("BUCKET_ACCESS_KEY"), viper.GetString("BUCKET_ACCESS_SECRET"),
+	// 	now.Year(), now.Month(), now.Day(), rec.CallInfo.Channel)
 
 	req, err := http.NewRequest("POST", "https://api.agora.io/v1/apps/"+viper.GetString("APP_ID")+"/cloud_recording/resourceid/"+rec.RID+"/mode/mix/start",
-		bytes.NewBuffer([]byte(requestBody)))
+		bytes.NewBuffer(requestBody))
 	if err != nil {
 		return "", err
 	}
@@ -167,22 +238,30 @@ func (rec *Recorder) Start() (string, error) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	rec.SID = result["sid"]
 	b, _ := json.Marshal(result)
+
+	fmt.Println("-----Start-----")
+	fmt.Printf("Response Body: %s\n\n", b)
+
 	return string(b), nil
 }
 
 // Stop stops the cloud recording
 func Stop(channel string, uid int, rid string, sid string) (string, error) {
-	requestBody := fmt.Sprintf(`
-		{
-			"cname": "%s",
-			"uid": "%d",
-			"clientRequest": {
-			}
-		}
-	`, channel, uid)
+	requestBodyMap := map[string]interface{}{
+		"cname": channel,
+		"uid":   strconv.Itoa(uid),
+		"clientRequest": map[string]interface{}{
+			"async_stop": true,
+		},
+	}
+	requestBody, err := json.Marshal(requestBodyMap)
+
+	if err != nil {
+		return "", err
+	}
 
 	req, err := http.NewRequest("POST", "https://api.agora.io/v1/apps/"+viper.GetString("APP_ID")+"/cloud_recording/resourceid/"+rid+"/sid/"+sid+"/mode/mix/stop",
-		bytes.NewBuffer([]byte(requestBody)))
+		bytes.NewBuffer(requestBody))
 	if err != nil {
 		return "", err
 	}
@@ -201,147 +280,14 @@ func Stop(channel string, uid int, rid string, sid string) (string, error) {
 	var result map[string]string
 	json.NewDecoder(resp.Body).Decode(&result)
 	b, _ := json.Marshal(result)
+
+	fmt.Println("-----Stop-----")
+	fmt.Printf("Response Body: %s\n\n", b)
+
 	return string(b), nil
 }
 
-// Listing recordings on s3 bucket
-type Creds struct{}
-
-// TODO: eliminate viper getString overhead by shifting to fetch to initialization
-func (c Creds) Retrieve(context.Context) (aws.Credentials, error) {
-	return aws.Credentials{
-		AccessKeyID:     viper.GetString("BUCKET_ACCESS_KEY"),
-		SecretAccessKey: viper.GetString("BUCKET_ACCESS_SECRET"),
-	}, nil
-}
-
-func GetRecordingsURLs(channel string) ([]string, error) {
-
-	bucket := viper.GetString("BUCKET_NAME")
-
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	var creds aws.CredentialsProvider
-
-	creds = Creds{}
-
-	cfg = aws.Config{
-		Region:      Regions[viper.GetInt("RECORDING_REGION")],
-		Credentials: creds,
-	}
-
-	client := s3.NewFromConfig(cfg)
-
-	objects, err := client.ListObjectsV2(context.TODO(), &s3.ListObjectsV2Input{
-		Bucket: &bucket,
-		Prefix: &channel,
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	var recordings []string
-
-	for _, object := range objects.Contents {
-		objectValue := aws.ToString(object.Key)
-		if objectValue[len(objectValue)-4:] == "m3u8" {
-			recordings = append(recordings, "https://"+bucket+".s3."+viper.GetString("RECORDING_REGION")+".amazonaws.com/"+objectValue)
-		}
-	}
-
-	return recordings, nil
-}
-
-func GetRecordingsList(channel string) ([]string, error) {
-
-	bucket := viper.GetString("BUCKET_NAME")
-
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	var creds aws.CredentialsProvider
-
-	creds = Creds{}
-
-	cfg = aws.Config{
-		Region:      Regions[viper.GetInt("RECORDING_REGION")],
-		Credentials: creds,
-	}
-
-	client := s3.NewFromConfig(cfg)
-
-	objects, err := client.ListObjectsV2(context.TODO(), &s3.ListObjectsV2Input{
-		Bucket: &bucket,
-		Prefix: &channel,
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	var recordings []string
-
-	for _, object := range objects.Contents {
-		objectValue := aws.ToString(object.Key)
-		if objectValue[len(objectValue)-4:] == "m3u8" {
-			recordings = append(recordings, objectValue)
-		}
-	}
-
-	return recordings, nil
-}
-
-type S3PresignGetObjectAPI interface {
-	PresignGetObject(
-		ctx context.Context,
-		params *s3.GetObjectInput,
-		optFns ...func(*s3.PresignOptions),
-	) (*v4.PresignedHTTPRequest, error)
-}
-
-func GetPresignedURL(c context.Context, api S3PresignGetObjectAPI, input *s3.GetObjectInput) (*v4.PresignedHTTPRequest, error) {
-	return api.PresignGetObject(c, input)
-}
-
-func GetRecordings(object string) (string, error) {
-	bucket := viper.GetString("BUCKET_NAME")
-
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		return "", err
-	}
-
-	var creds aws.CredentialsProvider
-
-	creds = Creds{}
-
-	cfg = aws.Config{
-		Region:      Regions[viper.GetInt("RECORDING_REGION")],
-		Credentials: creds,
-	}
-
-	client := s3.NewFromConfig(cfg)
-
-	psClient := s3.NewPresignClient(client)
-
-	resp, err := GetPresignedURL(context.TODO(), psClient, &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(object),
-	})
-	if err != nil {
-		return "", err
-	}
-
-	return resp.URL, nil
-}
-
-func CallStatus(rid string, sid string) (StatusStruct, error) {
+func Query(rid string, sid string) (StatusStruct, error) {
 	url := "https://api.agora.io/v1/apps/" + viper.GetString("APP_ID") + "/cloud_recording/resourceid/" + rid + "/sid/" + sid + "/mode/mix/query"
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -367,4 +313,94 @@ func CallStatus(rid string, sid string) (StatusStruct, error) {
 	// }
 	// result := string(bodyBytes)
 	return result, nil
+}
+
+// Update updates the cloud recording
+func Update(channel string, uid int, rid string, sid string, streamers []schemas.Streamer) (string, error) {
+	var uidList []string
+	for _, streamer := range streamers {
+		uidList = append(uidList, streamer.Uid)
+	}
+
+	requestBodyMap := map[string]interface{}{
+		"cname": channel,
+		"uid":   strconv.Itoa(uid),
+		"clientRequest": map[string]interface{}{
+			"streamSubscribe": map[string]interface{}{
+				"audioUidList": map[string]interface{}{
+					"subscribeAudioUids": uidList,
+				},
+				"videoUidList": map[string]interface{}{
+					"subscribeVideoUids": uidList,
+				},
+			},
+		},
+	}
+	requestBody, err := json.Marshal(requestBodyMap)
+
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", "https://api.agora.io/v1/apps/"+viper.GetString("APP_ID")+"/cloud_recording/resourceid/"+rid+"/sid/"+sid+"/mode/mix/update",
+		bytes.NewBuffer(requestBody))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(viper.GetString("CUSTOMER_ID"), viper.GetString("CUSTOMER_CERTIFICATE"))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+
+	defer resp.Body.Close()
+
+	var result map[string]string
+	json.NewDecoder(resp.Body).Decode(&result)
+	b, _ := json.Marshal(result)
+	return string(b), nil
+}
+
+// UpdateLayout updates the layout of cloud recording
+func UpdateLayout(channel string, uid int, rid string, sid string, streamers []schemas.Streamer) (string, error) {
+	requestBodyMap := map[string]interface{}{
+		"cname": channel,
+		"uid":   uid,
+		"clientRequest": map[string]interface{}{
+			"mixedVideoLayout": 0,
+			"backgroundColor":  "#000000",
+			"backgroundConfig": streamers,
+		},
+	}
+	requestBody, err := json.Marshal(requestBodyMap)
+
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", "https://api.agora.io/v1/apps/"+viper.GetString("APP_ID")+"/cloud_recording/resourceid/"+rid+"/sid/"+sid+"/mode/mix/updateLayout",
+		bytes.NewBuffer(requestBody))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(viper.GetString("CUSTOMER_ID"), viper.GetString("CUSTOMER_CERTIFICATE"))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+
+	defer resp.Body.Close()
+
+	var result map[string]string
+	json.NewDecoder(resp.Body).Decode(&result)
+	b, _ := json.Marshal(result)
+	return string(b), nil
 }
