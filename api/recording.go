@@ -5,8 +5,8 @@ import (
 	"math/rand"
 	"net/http"
 
-	"github.com/AgoraIO-Community/Cloud-Recording-Golang/schemas"
-	"github.com/AgoraIO-Community/Cloud-Recording-Golang/utils"
+	"github.com/BLive-Music/Cloud-Recording-Golang/schemas"
+	"github.com/BLive-Music/Cloud-Recording-Golang/utils"
 	"github.com/gofiber/fiber/v2"
 )
 

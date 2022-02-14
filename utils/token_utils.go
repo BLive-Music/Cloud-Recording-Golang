@@ -3,7 +3,7 @@ package utils
 import (
 	"time"
 
-	"github.com/AgoraIO-Community/Cloud-Recording-Golang/schemas"
+	"github.com/BLive-Music/Cloud-Recording-Golang/schemas"
 	"github.com/spf13/viper"
 )
 

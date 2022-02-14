@@ -1,4 +1,4 @@
-module github.com/AgoraIO-Community/Cloud-Recording-Golang
+module github.com/BLive-Music/Cloud-Recording-Golang
 
 // +heroku goVersion go1.15
 go 1.15
