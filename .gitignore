@@ -9,3 +9,5 @@ bin/
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+env-prod.txt
+.ebextensions/*
